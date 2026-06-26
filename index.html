@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V09 2026.06.26 10:56</title>
+  <title>A1528B eSRD Range Profile Web UART V10 2026.06.26 11:22</title>
   <style>
     :root {
       color-scheme: light;
@@ -18,6 +18,7 @@
       --r2: #0000ff;
       --height: #facc15;
       --deglitch: #16a34a;
+      --peak: #2563eb;
     }
 
     * {
@@ -255,7 +256,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V09 2026.06.26 10:56</h1>
+    <h1>A1528B eSRD Range Profile Web UART V10 2026.06.26 11:22</h1>
     <div class="status" id="status">Ready.</div>
   </header>
 
@@ -292,6 +293,11 @@
         <label>
           Display window
           <input id="windowSize" type="number" min="20" max="5000" step="10" value="300">
+        </label>
+        <label>
+          FW_ROI
+          <input id="fwRoi" type="range" min="5" max="200" step="1" value="20">
+          <span class="note" id="fwRoiLabel">20 frames</span>
         </label>
         <div class="row">
           <button id="connect" class="primary">Connect UART</button>
@@ -335,6 +341,7 @@
             <span id="legendR2"><i class="swatch"></i>r2</span>
             <span id="legendHeight"><i class="swatch"></i>height=2.4-r0</span>
             <span id="legendDeglitch"><i class="swatch"></i>deglitch</span>
+            <span id="legendPeak"><i class="swatch"></i>height peak</span>
           </div>
         </div>
       </div>
@@ -346,6 +353,8 @@
       comPort: document.getElementById("comPort"),
       baudRate: document.getElementById("baudRate"),
       windowSize: document.getElementById("windowSize"),
+      fwRoi: document.getElementById("fwRoi"),
+      fwRoiLabel: document.getElementById("fwRoiLabel"),
       refreshPorts: document.getElementById("refreshPorts"),
       portList: document.getElementById("portList"),
       connect: document.getElementById("connect"),
@@ -368,7 +377,8 @@
       legendR1: document.getElementById("legendR1"),
       legendR2: document.getElementById("legendR2"),
       legendHeight: document.getElementById("legendHeight"),
-      legendDeglitch: document.getElementById("legendDeglitch")
+      legendDeglitch: document.getElementById("legendDeglitch"),
+      legendPeak: document.getElementById("legendPeak")
     };
 
     const colors = {
@@ -377,6 +387,7 @@
       r2: "#0000ff",
       height: "#facc15",
       deglitch: "#16a34a",
+      peak: "#2563eb",
       grid: "#d9dee7",
       axis: "#667085",
       text: "#17202a",
@@ -403,6 +414,7 @@
       els.legendR2.style.color = colors.r2;
       els.legendHeight.style.color = colors.height;
       els.legendDeglitch.style.color = colors.deglitch;
+      els.legendPeak.style.color = colors.peak;
     }
 
     function setConnected(isConnected) {
@@ -589,35 +601,50 @@
     }
 
     function deglitchR0(points, medianWin = 5, spikeTh = 0.25, jumpTh = 0.35) {
+      return deglitchSeries(points, "r0", medianWin, spikeTh, jumpTh);
+    }
+
+    function deglitchHeight(points, medianWin = 5, spikeTh = 0.18, jumpTh = 0.3) {
+      return deglitchSeries(points, "height", medianWin, spikeTh, jumpTh);
+    }
+
+    function deglitchSeries(points, key, medianWin, spikeTh, jumpTh) {
       const out = [];
       const half = Math.floor(medianWin / 2);
       let prevValid = null;
 
       for (let i = 0; i < points.length; i += 1) {
-        const r0 = points[i].r0;
-        if (r0 === null) {
+        const value = points[i][key];
+        if (value === null) {
           out.push({ fn: points[i].fn, y: null, changed: false });
           continue;
         }
 
         const a = Math.max(0, i - half);
         const b = Math.min(points.length, i + half + 1);
-        const local = median(points.slice(a, b).map((p) => p.r0).filter((v) => v !== null));
+        const local = median(points.slice(a, b).map((p) => p[key]).filter((v) => v !== null));
         if (local === null) {
-          out.push({ fn: points[i].fn, y: r0, changed: false });
-          prevValid = r0;
+          out.push({ fn: points[i].fn, y: value, changed: false });
+          prevValid = value;
           continue;
         }
 
-        const spike = Math.abs(r0 - local) > spikeTh;
-        const jump = prevValid !== null && Math.abs(r0 - prevValid) > jumpTh && Math.abs(local - prevValid) <= jumpTh;
+        const spike = Math.abs(value - local) > spikeTh;
+        const jump = prevValid !== null && Math.abs(value - prevValid) > jumpTh && Math.abs(local - prevValid) <= jumpTh;
         const changed = spike || jump;
-        const y = changed ? local : r0;
+        const y = changed ? local : value;
         out.push({ fn: points[i].fn, y, changed });
         prevValid = y;
       }
 
       return out;
+    }
+
+    function heightPeak(heightDeglitch, fwRoi) {
+      const candidates = heightDeglitch.filter((p) => p.y !== null);
+      const roi = candidates.slice(-Math.max(1, fwRoi));
+      if (!roi.length) return null;
+      return roi.reduce((best, p) => p.y > best.y ? p : best, roi[0]);
     }
 
     let drawQueued = false;
@@ -683,8 +710,10 @@
       if (els.showR0.checked) drawSeries(ctx, points, "r0", colors.r0, sx, sy);
       if (els.showR1.checked) drawSeries(ctx, points, "r1", colors.r1, sx, sy);
       if (els.showR2.checked) drawSeries(ctx, points, "r2", colors.r2, sx, sy);
-      if (els.showHeight.checked) drawSeries(ctx, points, "height", colors.height, sx, sy);
+      const heightDeglitch = deglitchHeight(points);
+      if (els.showHeight.checked) drawLinePoints(ctx, heightDeglitch, colors.height, sx, sy);
       if (els.showDeglitch.checked) drawDeglitchDots(ctx, deglitchR0(points), colors.deglitch, sx, sy);
+      if (els.showHeight.checked) drawHeightPeak(ctx, heightPeak(heightDeglitch, Number(els.fwRoi.value) || 20), colors.peak, sx, sy);
     }
 
     function drawAxes(ctx, box, minFn, maxFn, minY, maxY) {
@@ -779,6 +808,50 @@
       }
     }
 
+    function drawLinePoints(ctx, points, color, sx, sy) {
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2;
+      let started = false;
+      ctx.beginPath();
+      for (const p of points) {
+        if (p.y === null) {
+          started = false;
+          continue;
+        }
+        const x = sx(p.fn);
+        const y = sy(p.y);
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+    }
+
+    function drawHeightPeak(ctx, peak, color, sx, sy) {
+      if (!peak || peak.y === null) return;
+      const x = sx(peak.fn);
+      const y = sy(peak.y);
+      const label = `${Math.round(peak.y * 100)} cm`;
+
+      ctx.fillStyle = color;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = "bold 13px Arial";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = color;
+      ctx.fillText(label, Math.min(x + 8, els.canvas.width - 58), Math.max(y - 8, 18));
+    }
+
     function csvEscape(value) {
       if (value === null || value === undefined) return "";
       const text = String(value);
@@ -833,6 +906,10 @@
     els.clearData.addEventListener("click", clearData);
     els.downloadCsv.addEventListener("click", downloadCsv);
     els.downloadLog.addEventListener("click", downloadLog);
+    els.fwRoi.addEventListener("input", () => {
+      els.fwRoiLabel.textContent = `${els.fwRoi.value} frames`;
+      drawPlot();
+    });
     for (const el of [els.windowSize, els.showR0, els.showR1, els.showR2, els.showHeight, els.showDeglitch]) {
       el.addEventListener("input", drawPlot);
     }
