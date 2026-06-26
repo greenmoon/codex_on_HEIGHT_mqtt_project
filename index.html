@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V06 2026.06.25 16:33</title>
+  <title>A1528B eSRD Range Profile Web UART V09 2026.06.26 10:56</title>
   <style>
     :root {
       color-scheme: light;
@@ -16,6 +16,8 @@
       --r0: #ff0000;
       --r1: #00a000;
       --r2: #0000ff;
+      --height: #facc15;
+      --deglitch: #16a34a;
     }
 
     * {
@@ -253,7 +255,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V06 2026.06.25 16:33</h1>
+    <h1>A1528B eSRD Range Profile Web UART V09 2026.06.26 10:56</h1>
     <div class="status" id="status">Ready.</div>
   </header>
 
@@ -301,6 +303,8 @@
         <label><input id="showR0" type="checkbox" checked> r0</label>
         <label><input id="showR1" type="checkbox"> r1</label>
         <label><input id="showR2" type="checkbox"> r2</label>
+        <label><input id="showHeight" type="checkbox" checked> height</label>
+        <label><input id="showDeglitch" type="checkbox" checked> deglitch dots</label>
       </div>
 
       <div class="group">
@@ -329,6 +333,8 @@
             <span id="legendR0"><i class="swatch"></i>r0</span>
             <span id="legendR1"><i class="swatch"></i>r1</span>
             <span id="legendR2"><i class="swatch"></i>r2</span>
+            <span id="legendHeight"><i class="swatch"></i>height=2.4-r0</span>
+            <span id="legendDeglitch"><i class="swatch"></i>deglitch</span>
           </div>
         </div>
       </div>
@@ -347,6 +353,8 @@
       showR0: document.getElementById("showR0"),
       showR1: document.getElementById("showR1"),
       showR2: document.getElementById("showR2"),
+      showHeight: document.getElementById("showHeight"),
+      showDeglitch: document.getElementById("showDeglitch"),
       downloadCsv: document.getElementById("downloadCsv"),
       downloadLog: document.getElementById("downloadLog"),
       clearData: document.getElementById("clearData"),
@@ -358,13 +366,17 @@
       lastR0: document.getElementById("lastR0"),
       legendR0: document.getElementById("legendR0"),
       legendR1: document.getElementById("legendR1"),
-      legendR2: document.getElementById("legendR2")
+      legendR2: document.getElementById("legendR2"),
+      legendHeight: document.getElementById("legendHeight"),
+      legendDeglitch: document.getElementById("legendDeglitch")
     };
 
     const colors = {
       r0: "#ff0000",
       r1: "#00a000",
       r2: "#0000ff",
+      height: "#facc15",
+      deglitch: "#16a34a",
       grid: "#d9dee7",
       axis: "#667085",
       text: "#17202a",
@@ -389,6 +401,8 @@
       els.legendR0.style.color = colors.r0;
       els.legendR1.style.color = colors.r1;
       els.legendR2.style.color = colors.r2;
+      els.legendHeight.style.color = colors.height;
+      els.legendDeglitch.style.color = colors.deglitch;
     }
 
     function setConnected(isConnected) {
@@ -426,8 +440,10 @@
         r0: numberOrNull(obj.r0),
         r1: numberOrNull(obj.r1),
         r2: numberOrNull(obj.r2),
+        height: null,
         raw_json: trimmed
       };
+      rec.height = rec.r0 === null ? null : 2.4 - rec.r0;
 
       if (rec.fn === null || (rec.r0 === null && rec.r1 === null && rec.r2 === null)) {
         state.badCount += 1;
@@ -566,6 +582,44 @@
       els.lastR0.textContent = last && last.r0 !== null ? last.r0.toFixed(3) : "-";
     }
 
+    function median(values) {
+      if (!values.length) return null;
+      const sorted = values.slice().sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    }
+
+    function deglitchR0(points, medianWin = 5, spikeTh = 0.25, jumpTh = 0.35) {
+      const out = [];
+      const half = Math.floor(medianWin / 2);
+      let prevValid = null;
+
+      for (let i = 0; i < points.length; i += 1) {
+        const r0 = points[i].r0;
+        if (r0 === null) {
+          out.push({ fn: points[i].fn, y: null, changed: false });
+          continue;
+        }
+
+        const a = Math.max(0, i - half);
+        const b = Math.min(points.length, i + half + 1);
+        const local = median(points.slice(a, b).map((p) => p.r0).filter((v) => v !== null));
+        if (local === null) {
+          out.push({ fn: points[i].fn, y: r0, changed: false });
+          prevValid = r0;
+          continue;
+        }
+
+        const spike = Math.abs(r0 - local) > spikeTh;
+        const jump = prevValid !== null && Math.abs(r0 - prevValid) > jumpTh && Math.abs(local - prevValid) <= jumpTh;
+        const changed = spike || jump;
+        const y = changed ? local : r0;
+        out.push({ fn: points[i].fn, y, changed });
+        prevValid = y;
+      }
+
+      return out;
+    }
+
     let drawQueued = false;
     function requestDraw() {
       if (drawQueued) return;
@@ -618,7 +672,7 @@
       }
 
       const minY = 0;
-      const maxY = 1.6;
+      const maxY = 2.4;
 
       const minFn = points[0].fn;
       const maxFn = points[points.length - 1].fn === minFn ? minFn + 1 : points[points.length - 1].fn;
@@ -629,6 +683,8 @@
       if (els.showR0.checked) drawSeries(ctx, points, "r0", colors.r0, sx, sy);
       if (els.showR1.checked) drawSeries(ctx, points, "r1", colors.r1, sx, sy);
       if (els.showR2.checked) drawSeries(ctx, points, "r2", colors.r2, sx, sy);
+      if (els.showHeight.checked) drawSeries(ctx, points, "height", colors.height, sx, sy);
+      if (els.showDeglitch.checked) drawDeglitchDots(ctx, deglitchR0(points), colors.deglitch, sx, sy);
     }
 
     function drawAxes(ctx, box, minFn, maxFn, minY, maxY) {
@@ -708,6 +764,21 @@
       }
     }
 
+    function drawDeglitchDots(ctx, points, color, sx, sy) {
+      ctx.fillStyle = color;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      for (const p of points) {
+        if (!p.changed || p.y === null) continue;
+        const x = sx(p.fn);
+        const y = sy(p.y);
+        ctx.beginPath();
+        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
     function csvEscape(value) {
       if (value === null || value === undefined) return "";
       const text = String(value);
@@ -741,7 +812,7 @@
     }
 
     async function downloadCsv() {
-      const header = ["pc_time_iso", "pc_time_ms", "fn", "r0", "r1", "r2", "raw_json"];
+      const header = ["pc_time_iso", "pc_time_ms", "fn", "r0", "r1", "r2", "height", "raw_json"];
       const rows = state.records.map((r) => header.map((key) => csvEscape(r[key])).join(","));
       await saveToDataFolder(`jb_GEP_dataset_${timestamp()}.csv`, "text/csv;charset=utf-8", [header.join(","), ...rows].join("\n"));
     }
@@ -762,7 +833,7 @@
     els.clearData.addEventListener("click", clearData);
     els.downloadCsv.addEventListener("click", downloadCsv);
     els.downloadLog.addEventListener("click", downloadLog);
-    for (const el of [els.windowSize, els.showR0, els.showR1, els.showR2]) {
+    for (const el of [els.windowSize, els.showR0, els.showR1, els.showR2, els.showHeight, els.showDeglitch]) {
       el.addEventListener("input", drawPlot);
     }
     window.addEventListener("resize", resizeCanvas);
