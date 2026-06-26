@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V23 2026.06.26 14:37</title>
+  <title>A1528B eSRD Range Profile Web UART V24 2026.06.26 14:47</title>
   <style>
     :root {
       color-scheme: light;
@@ -286,7 +286,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V23 2026.06.26 14:37</h1>
+    <h1>A1528B eSRD Range Profile Web UART V24 2026.06.26 14:47</h1>
     <div class="status" id="status">Ready.</div>
   </header>
 
@@ -369,7 +369,7 @@
 
     <section class="plot-wrap">
       <div class="plot-area">
-        <textarea id="historyLog" class="history-log" readonly placeholder="Peak history after height <= 20 cm trigger and peak > height_TH: (index, height)"></textarea>
+        <textarea id="historyLog" class="history-log" readonly placeholder="Peak history: IDLE at H <= 50 cm, save peak when H >= height_TH"></textarea>
         <canvas id="plot" width="1200" height="650"></canvas>
       </div>
       <div class="metrics">
@@ -434,7 +434,7 @@
     const CALI_STORAGE_KEY = "a1528b_esrd_cali_cm";
     const FW_ROI_STORAGE_KEY = "a1528b_esrd_fw_roi";
     const DEFAULT_HISTORY_HEIGHT_TH_CM = 120;
-    const HISTORY_ARM_HEIGHT_CM = 20;
+    const HISTORY_IDLE_HEIGHT_CM = 50;
 
     const colors = {
       r0: "#ff0000",
@@ -458,8 +458,7 @@
       rawLines: [],
       peakHistory: [],
       peakHistorySeq: 0,
-      peakHistoryArmed: false,
-      peakHistoryActive: false,
+      peakHistoryState: "IDLE",
       peakCandidate: null,
       badCount: 0,
       portMap: new Map()
@@ -707,8 +706,7 @@
       state.rawLines = [];
       state.peakHistory = [];
       state.peakHistorySeq = 0;
-      state.peakHistoryArmed = false;
-      state.peakHistoryActive = false;
+      state.peakHistoryState = "IDLE";
       state.peakCandidate = null;
       state.badCount = 0;
       updateMetrics();
@@ -738,16 +736,18 @@
       const latest = valid[valid.length - 1];
       const latestHeightCm = latest.y * 100;
 
-      if (latestHeightCm <= HISTORY_ARM_HEIGHT_CM) {
-        if (state.peakHistoryActive) commitPeakHistoryCandidate();
-        state.peakHistoryArmed = true;
-        state.peakHistoryActive = false;
+      if (latestHeightCm <= HISTORY_IDLE_HEIGHT_CM) {
+        if (state.peakHistoryState === "VALID") commitPeakHistoryCandidate();
+        state.peakHistoryState = "IDLE";
         state.peakCandidate = null;
         return;
       }
 
-      if (!state.peakHistoryArmed) return;
-      state.peakHistoryActive = true;
+      if (state.peakHistoryState === "IDLE") {
+        state.peakHistoryState = "VALID";
+        state.peakCandidate = null;
+      }
+
       if (!state.peakCandidate || latest.y > state.peakCandidate.y) {
         state.peakCandidate = latest;
       }
