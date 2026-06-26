@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V15 2026.06.26 12:41</title>
+  <title>A1528B eSRD Range Profile Web UART V16 2026.06.26 13:00</title>
   <style>
     :root {
       color-scheme: light;
@@ -277,7 +277,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V15 2026.06.26 12:41</h1>
+    <h1>A1528B eSRD Range Profile Web UART V16 2026.06.26 13:00</h1>
     <div class="status" id="status">Ready.</div>
   </header>
 
@@ -429,6 +429,7 @@
       { layer_num: 4, height_cm: 160, tolerance_cm: 30, state: "NBD" },
       { layer_num: 5, height_cm: 210, tolerance_cm: 20, state: "IDL" }
     ];
+    const CALI_STORAGE_KEY = "a1528b_esrd_cali_cm";
 
     const colors = {
       r0: "#ff0000",
@@ -469,6 +470,30 @@
 
     function caliMeters() {
       return (Number(els.caliCm.value) || 0) / 100;
+    }
+
+    function syncCaliLabel() {
+      els.caliLabel.textContent = `${els.caliCm.value} cm`;
+    }
+
+    function loadSavedCali() {
+      try {
+        const saved = window.localStorage.getItem(CALI_STORAGE_KEY);
+        if (saved === null) return;
+        const value = Math.max(-10, Math.min(10, Number.parseInt(saved, 10)));
+        if (Number.isFinite(value)) els.caliCm.value = String(value);
+      } catch (_err) {
+        // Storage can be unavailable in restricted browser modes.
+      }
+      syncCaliLabel();
+    }
+
+    function saveCali() {
+      try {
+        window.localStorage.setItem(CALI_STORAGE_KEY, els.caliCm.value);
+      } catch (_err) {
+        // Keep calibration usable even when persistence is blocked.
+      }
     }
 
     function calibratedHeight(rec) {
@@ -1000,8 +1025,13 @@
       drawPlot();
     });
     els.caliCm.addEventListener("input", () => {
-      els.caliLabel.textContent = `${els.caliCm.value} cm`;
+      syncCaliLabel();
       drawPlot();
+    });
+    els.caliCm.addEventListener("change", () => {
+      syncCaliLabel();
+      saveCali();
+      setStatus(`Saved CALI ${els.caliCm.value} cm for next open.`);
     });
     for (const el of [els.windowSize, els.showR0, els.showR1, els.showR2, els.showHeight, els.showDeglitch, els.showR0Deglitch]) {
       el.addEventListener("input", drawPlot);
@@ -1014,6 +1044,7 @@
     if (!("serial" in navigator)) {
       setStatus("Web Serial needs Chrome or Edge over HTTPS.");
     }
+    loadSavedCali();
     renderStateTable();
     syncLegendColors();
     refreshPorts();
