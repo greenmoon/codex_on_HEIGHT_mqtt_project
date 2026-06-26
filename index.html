@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V17 2026.06.26 13:21</title>
+  <title>A1528B eSRD Range Profile Web UART V19 2026.06.26 13:58</title>
   <style>
     :root {
       color-scheme: light;
@@ -18,7 +18,7 @@
       --r2: #0000ff;
       --height: #facc15;
       --deglitch: #60a5fa;
-      --peak: #2563eb;
+      --peak: #ff0000;
     }
 
     * {
@@ -233,27 +233,6 @@
       line-height: 1.45;
     }
 
-    .state-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-
-    .state-table th,
-    .state-table td {
-      padding: 4px 5px;
-      border-bottom: 1px solid var(--line);
-      text-align: right;
-      white-space: nowrap;
-    }
-
-    .state-table th:first-child,
-    .state-table td:first-child,
-    .state-table th:last-child,
-    .state-table td:last-child {
-      text-align: left;
-    }
-
     @media (max-width: 820px) {
       header,
       main {
@@ -277,7 +256,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V17 2026.06.26 13:21</h1>
+    <h1>A1528B eSRD Range Profile Web UART V19 2026.06.26 13:58</h1>
     <div class="status" id="status">Ready.</div>
   </header>
 
@@ -338,16 +317,6 @@
         <label><input id="showHeight" type="checkbox" checked> height</label>
         <label><input id="showDeglitch" type="checkbox" checked> height deglitch dots</label>
         <label><input id="showR0Deglitch" type="checkbox"> r0 deglitch</label>
-      </div>
-
-      <div class="group">
-        <label>Human BED state table</label>
-        <table class="state-table">
-          <thead>
-            <tr><th>Layer</th><th>Height</th><th>Tol</th><th>State</th></tr>
-          </thead>
-          <tbody id="stateTableBody"></tbody>
-        </table>
       </div>
 
       <div class="group">
@@ -418,21 +387,10 @@
       legendR2: document.getElementById("legendR2"),
       legendHeight: document.getElementById("legendHeight"),
       legendDeglitch: document.getElementById("legendDeglitch"),
-      legendPeak: document.getElementById("legendPeak"),
-      stateTableBody: document.getElementById("stateTableBody")
+      legendPeak: document.getElementById("legendPeak")
     };
 
-    const heightStateTable = [
-      { layer_num: 1, height_cm: 25, tolerance_cm: 3, state: "EMP" },
-      { layer_num: 2, height_cm: 40, tolerance_cm: 10, state: "IBD" },
-      { layer_num: 3, height_cm: 100, tolerance_cm: 20, state: "SIT" },
-      { layer_num: 4, height_cm: 160, tolerance_cm: 30, state: "NBD" },
-      { layer_num: 5, height_cm: 210, tolerance_cm: 20, state: "IDL" }
-    ];
     const CALI_STORAGE_KEY = "a1528b_esrd_cali_cm";
-    const IBD_MICRO_MOTION_WINDOW_MS = 10000;
-    const IBD_FLAT_AMPLITUDE_CM = 0.3;
-    const IBD_TRUSTED_AMPLITUDE_CM = 3.0;
 
     const colors = {
       r0: "#ff0000",
@@ -441,7 +399,7 @@
       height: "#facc15",
       deglitch: "#60a5fa",
       r0Deglitch: "#16a34a",
-      peak: "#2563eb",
+      peak: "#ff0000",
       grid: "#d9dee7",
       axis: "#667085",
       text: "#17202a",
@@ -501,50 +459,6 @@
 
     function calibratedHeight(rec) {
       return rec.r0 === null ? null : 2.4 - rec.r0 + caliMeters();
-    }
-
-    function classifyHeightState(heightCm) {
-      const matches = heightStateTable
-        .map((row) => ({ ...row, diff: Math.abs(heightCm - row.height_cm) }))
-        .filter((row) => row.diff <= row.tolerance_cm)
-        .sort((a, b) => a.diff - b.diff || a.layer_num - b.layer_num);
-      return matches[0] || null;
-    }
-
-    function ibdConfidence(heightDeglitch) {
-      const valid = heightDeglitch.filter((p) => p.y !== null);
-      if (valid.length < 2) return { score: 0, amplitudeCm: 0, sampleCount: valid.length };
-
-      const latestMs = valid[valid.length - 1].pc_time_ms;
-      const recent = Number.isFinite(latestMs)
-        ? valid.filter((p) => Number.isFinite(p.pc_time_ms) && latestMs - p.pc_time_ms <= IBD_MICRO_MOTION_WINDOW_MS)
-        : valid.slice(-Math.min(valid.length, 200));
-      const windowPoints = recent.length >= 2 ? recent : valid.slice(-Math.min(valid.length, 2));
-      const valuesCm = windowPoints.map((p) => p.y * 100);
-      const amplitudeCm = Math.max(...valuesCm) - Math.min(...valuesCm);
-      const score = Math.max(0, Math.min(1, amplitudeCm / IBD_TRUSTED_AMPLITUDE_CM));
-      return { score, amplitudeCm, sampleCount: windowPoints.length };
-    }
-
-    function labelStateForHeight(heightCm, heightDeglitch) {
-      const state = classifyHeightState(heightCm);
-      if (!state) return { stateText: "UNK", confidence: 0, amplitudeCm: 0 };
-      if (state.state !== "IBD") return { stateText: state.state, confidence: 1, amplitudeCm: null };
-
-      const confidence = ibdConfidence(heightDeglitch);
-      const stateText = confidence.amplitudeCm < IBD_FLAT_AMPLITUDE_CM ? "IBD_UNTRUSTED" : "IBD";
-      return { stateText, confidence: confidence.score, amplitudeCm: confidence.amplitudeCm };
-    }
-
-    function renderStateTable() {
-      els.stateTableBody.innerHTML = heightStateTable.map((row) => `
-        <tr>
-          <td>${row.layer_num}</td>
-          <td>${row.height_cm} cm</td>
-          <td>${row.tolerance_cm} cm</td>
-          <td>${row.state}</td>
-        </tr>
-      `).join("");
     }
 
     function setConnected(isConnected) {
@@ -847,7 +761,7 @@
       if (els.showHeight.checked) drawLinePoints(ctx, heightDeglitch, colors.height, sx, sy);
       if (els.showHeight.checked && els.showDeglitch.checked) drawDeglitchDots(ctx, heightDeglitch, colors.deglitch, sx, sy);
       if (els.showR0Deglitch.checked) drawDeglitchDots(ctx, deglitchR0(points), colors.r0Deglitch, sx, sy);
-      if (els.showHeight.checked) drawHeightPeak(ctx, heightPeak(heightDeglitch, Number(els.fwRoi.value) || 20), heightDeglitch, colors.peak, sx, sy);
+      if (els.showHeight.checked) drawHeightPeak(ctx, heightPeak(heightDeglitch, Number(els.fwRoi.value) || 20), colors.peak, sx, sy);
     }
 
     function drawAxes(ctx, box, minFn, maxFn, minY, maxY) {
@@ -965,13 +879,12 @@
       ctx.stroke();
     }
 
-    function drawHeightPeak(ctx, peak, heightDeglitch, color, sx, sy) {
+    function drawHeightPeak(ctx, peak, color, sx, sy) {
       if (!peak || peak.y === null) return;
       const x = sx(peak.fn);
       const y = sy(peak.y);
       const heightCm = Math.round(peak.y * 100);
-      const state = labelStateForHeight(heightCm, heightDeglitch);
-      const label = `${heightCm} cm, ${state.stateText}, conf=${state.confidence.toFixed(2)}`;
+      const label = `${heightCm} cm`;
 
       ctx.fillStyle = color;
       ctx.strokeStyle = "#ffffff";
@@ -1073,7 +986,6 @@
       setStatus("Web Serial needs Chrome or Edge over HTTPS.");
     }
     loadSavedCali();
-    renderStateTable();
     syncLegendColors();
     refreshPorts();
     updateMetrics();
