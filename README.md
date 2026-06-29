@@ -1,4 +1,4 @@
-﻿# A1528B eSRD Range Profile UART Recorder
+# A1528B eSRD Range Profile UART Recorder
 
 Dashboard title:
 
@@ -65,4 +65,34 @@ Optional plotted fields:
 - Click `Open ./data folder` to browse saved CSV and raw log files.
 - CSV is flushed after each valid JSON record to reduce data loss.
 - Bad JSON lines are counted and skipped, while raw text is still saved to the raw log.
+## Native MQTT Bridge
+
+For a normal MQTT TCP broker, use the local Windows Python bridge instead of browser MQTT/WebSocket.
+
+Flow:
+
+```text
+Radar -> COM5 -> PC Python bridge -> derived height_cm -> native MQTT publish
+```
+
+Default publish format:
+
+```text
+topic: height_cm
+payload: {"fn":123,"height_cm":182.3,"timetag":"2026.06.29 16:48:30.123"}
+```
+
+Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Run with defaults:
+
+```powershell
+python uart_to_mqtt_bridge.py --port COM5 --baud 921600 --mqtt-host 127.0.0.1 --mqtt-port 1883 --topic height_cm
+```
+
+Or edit `run_uart_to_mqtt_bridge.bat` and double-click it. When this bridge owns COM5, do not also click `Connect UART` in the browser page.
 
