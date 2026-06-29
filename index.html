@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Height Measurement Monitor by Joybien Technologies V47 2026.06.29 16:59</title>
+  <title>Height Measurement Monitor by Joybien Technologies V48 2026.06.29 17:06</title>
   <style>
     :root {
       color-scheme: light;
@@ -400,7 +400,7 @@
 </head>
 <body>
   <header>
-    <h1>Height Measurement Monitor by Joybien Technologies V47 2026.06.29 16:59</h1>
+    <h1>Height Measurement Monitor by Joybien Technologies V48 2026.06.29 17:06</h1>
     <div class="mode-switch" aria-label="Display mode">
       <button id="modeRd" type="button" data-mode="rd" class="active">RD</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
@@ -482,22 +482,22 @@
 
       <div class="group">
         <label>
-          MQTT WebSocket URL
-          <input id="mqttUrl" type="text" value="ws://59.124.7.96:9001">
+          Native MQTT broker IP
+          <input id="mqttUrl" type="text" value="59.124.7.96" disabled>
         </label>
         <label>
           MQTT topic
-          <input id="mqttTopic" type="text" value="height">
+          <input id="mqttTopic" type="text" value="height_cm" disabled>
         </label>
         <div class="row">
-          <button id="mqttConnect">MQTT Connect</button>
-          <button id="mqttDisconnect" disabled>MQTT Disconnect</button>
+          <button id="mqttConnect" type="button" disabled>Native MQTT via Python</button>
+          <button id="mqttDisconnect" type="button" disabled>MQTT Disconnect</button>
         </div>
         <div class="row">
           <button id="mqttTestStart" disabled>Start mqtt_test</button>
           <button id="mqttTestStop" disabled>Stop mqtt_test</button>
         </div>
-        <div class="note" id="mqttStatus">MQTT idle. Browser MQTT requires broker WebSocket support.</div>
+        <div class="note" id="mqttStatus">Native MQTT TCP uses run_uart_to_mqtt_bridge.bat. No ws:// needed.</div>
       </div>
 
       <p class="note">

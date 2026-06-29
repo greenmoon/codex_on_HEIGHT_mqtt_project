@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Radar UART to native MQTT height publisher")
     parser.add_argument("--port", default="COM5", help="Radar UART COM port, default COM5")
     parser.add_argument("--baud", type=int, default=921600, help="UART baud rate, default 921600")
-    parser.add_argument("--mqtt-host", default="127.0.0.1", help="Native MQTT broker host/IP")
+    parser.add_argument("--mqtt-host", default="59.124.7.96", help="Native MQTT broker host/IP")
     parser.add_argument("--mqtt-port", type=int, default=1883, help="Native MQTT TCP port")
     parser.add_argument("--topic", default="height_cm", help="MQTT topic for JSON payload")
     parser.add_argument("--sensor-height-m", type=float, default=2.4, help="Height formula base in meters")
@@ -53,7 +53,11 @@ def derive_height_cm(record: dict[str, Any], sensor_height_m: float, cali_cm: fl
 
 
 def connect_mqtt(args: argparse.Namespace) -> mqtt.Client:
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    callback_api = getattr(mqtt, "CallbackAPIVersion", None)
+    if callback_api is not None:
+        client = mqtt.Client(callback_api.VERSION2)
+    else:
+        client = mqtt.Client()
     if args.username:
         client.username_pw_set(args.username, args.password)
     client.connect(args.mqtt_host, args.mqtt_port, keepalive=60)

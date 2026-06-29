@@ -91,7 +91,7 @@ pip install -r requirements.txt
 Run with defaults:
 
 ```powershell
-python uart_to_mqtt_bridge.py --port COM5 --baud 921600 --mqtt-host 127.0.0.1 --mqtt-port 1883 --topic height_cm
+python uart_to_mqtt_bridge.py --port COM5 --baud 921600 --mqtt-host 59.124.7.96 --mqtt-port 1883 --topic height_cm
 ```
 
 Or edit `run_uart_to_mqtt_bridge.bat` and double-click it. When this bridge owns COM5, do not also click `Connect UART` in the browser page.
