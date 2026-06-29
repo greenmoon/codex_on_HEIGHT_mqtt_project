@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V30 2026.06.29 12:26 completed</title>
+  <title>A1528B eSRD Range Profile Web UART V31 2026.06.29 12:37 completed</title>
   <style>
     :root {
       color-scheme: light;
@@ -268,30 +268,33 @@
       display: none;
       min-height: 0;
       grid-template-rows: auto minmax(0, 1fr);
-      gap: 12px;
+      gap: 14px;
     }
 
     .dashboard-height {
       display: grid;
-      gap: 6px;
-      padding: 18px;
+      justify-items: center;
+      gap: 12px;
+      padding: 28px 18px;
       background: #ffffff;
-      border: 1px solid var(--line);
+      border: 2px solid #16a34a;
       border-radius: 6px;
+      text-align: center;
     }
 
     .dashboard-height span {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 700;
-      text-transform: uppercase;
+      color: #14532d;
+      font-size: 34px;
+      font-weight: 800;
+      line-height: 1.12;
     }
 
     .dashboard-height b {
       color: #16a34a;
-      font-size: 54px;
-      line-height: 1;
+      font-size: clamp(86px, 13vw, 190px);
+      line-height: 0.95;
       letter-spacing: 0;
+      white-space: nowrap;
     }
 
     body.dashboard-mode main {
@@ -368,7 +371,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V30 2026.06.29 12:26 completed</h1>
+    <h1>A1528B eSRD Range Profile Web UART V31 2026.06.29 12:37 completed</h1>
     <div class="mode-switch" aria-label="Display mode">
       <button id="modeRd" type="button" data-mode="rd" class="active">RD</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
@@ -479,7 +482,7 @@
         <canvas id="plot" width="1200" height="650"></canvas>
       </div>
       <div class="dashboard-panel" id="dashboardPanel">
-        <div class="dashboard-height"><span>Height</span><b id="dashboardHeight">-</b></div>
+        <div class="dashboard-height"><span>Your height is</span><b id="dashboardHeight">-</b></div>
         <textarea id="dashboardHistoryLog" class="history-log" readonly placeholder="Peak history"></textarea>
       </div>
       <div class="metrics">
@@ -558,6 +561,7 @@
     const HEIGHT_TH_STORAGE_KEY = "a1528b_esrd_height_th_cm";
     const DEFAULT_HISTORY_HEIGHT_TH_CM = 120;
     const HISTORY_IDLE_HEIGHT_CM = 50;
+    const DASHBOARD_HEIGHT_MA_SIZE = 200;
 
     const colors = {
       r0: "#ff0000",
@@ -589,6 +593,8 @@
       mqttTestSeq: 0,
       badCount: 0,
       displayMode: "rd",
+      dashboardHeightQueue: [],
+      dashboardHeightSum: 0,
       portMap: new Map()
     };
 
@@ -609,6 +615,20 @@
       if (heightMeters === null || !Number.isFinite(heightMeters)) return "-";
       const heightCm = heightMeters * 100;
       return heightCm >= 210 ? "Scanning" : `${heightCm.toFixed(1)} cm`;
+    }
+
+    function updateStableDashboardHeight(heightMeters) {
+      if (heightMeters === null || !Number.isFinite(heightMeters)) {
+        els.dashboardHeight.textContent = "-";
+        return;
+      }
+      state.dashboardHeightQueue.push(heightMeters);
+      state.dashboardHeightSum += heightMeters;
+      while (state.dashboardHeightQueue.length > DASHBOARD_HEIGHT_MA_SIZE) {
+        state.dashboardHeightSum -= state.dashboardHeightQueue.shift();
+      }
+      const stableHeight = state.dashboardHeightSum / state.dashboardHeightQueue.length;
+      els.dashboardHeight.textContent = formatHeightCm(stableHeight);
     }
 
     function setMqttStatus(text) {
@@ -982,6 +1002,8 @@
       state.peakHistoryState = "IDLE";
       state.peakCandidate = null;
       state.badCount = 0;
+      state.dashboardHeightQueue = [];
+      state.dashboardHeightSum = 0;
       updateMetrics();
       updateHistoryLog();
       drawPlot();
@@ -1038,7 +1060,8 @@
       els.badCount.textContent = String(state.badCount);
       els.lastFn.textContent = last ? String(last.fn) : "-";
       els.lastR0.textContent = last && last.r0 !== null ? last.r0.toFixed(3) : "-";
-      els.dashboardHeight.textContent = last ? formatHeightCm(calibratedHeight(last)) : "-";
+      if (last) updateStableDashboardHeight(calibratedHeight(last));
+      else els.dashboardHeight.textContent = "-";
     }
 
     function median(values) {
