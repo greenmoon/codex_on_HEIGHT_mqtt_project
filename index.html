@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V34 2026.06.29 13:07 completed</title>
+  <title>A1528B eSRD Range Profile Web UART V35 2026.06.29 13:18 completed</title>
   <style>
     :root {
       color-scheme: light;
@@ -371,7 +371,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V34 2026.06.29 13:07 completed</h1>
+    <h1>A1528B eSRD Range Profile Web UART V35 2026.06.29 13:18 completed</h1>
     <div class="mode-switch" aria-label="Display mode">
       <button id="modeRd" type="button" data-mode="rd" class="active">RD</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
@@ -562,10 +562,13 @@
     const DEFAULT_HISTORY_HEIGHT_TH_CM = 120;
     const HISTORY_IDLE_HEIGHT_CM = 50;
     const DASHBOARD_HEIGHT_MA_SIZE = 20;
-    const SMART_EMPTY_WINDOW = 60;
+    const SMART_EMPTY_WINDOW = 20;
     const SMART_EMPTY_CLIFF_M = 0.25;
-    const SMART_EMPTY_MIN_CLIFFS = 4;
+    const SMART_EMPTY_MIN_CLIFFS = 3;
     const SMART_EMPTY_RANGE_M = 0.65;
+    const EMPTY_HOLD_MS = 1500;
+    const MIN_VALID_HEIGHT_CM = 60;
+    const MAX_VALID_HEIGHT_CM = 210;
 
     const colors = {
       r0: "#ff0000",
@@ -599,6 +602,8 @@
       displayMode: "rd",
       dashboardHeightQueue: [],
       dashboardHeightSum: 0,
+      dashboardEmptySinceMs: null,
+      dashboardLastValidText: null,
       portMap: new Map()
     };
 
@@ -615,10 +620,17 @@
       drawPlot();
     }
 
+    function isEmptyHeightMeters(heightMeters) {
+      if (heightMeters === null || !Number.isFinite(heightMeters)) return true;
+      const heightCm = heightMeters * 100;
+      return heightCm >= MAX_VALID_HEIGHT_CM || heightCm <= MIN_VALID_HEIGHT_CM;
+    }
+
     function formatHeightCm(heightMeters) {
       if (heightMeters === null || !Number.isFinite(heightMeters)) return "-";
+      if (isEmptyHeightMeters(heightMeters)) return "EMPTY";
       const heightCm = heightMeters * 100;
-      return heightCm >= 210 ? "EMPTY" : `${heightCm.toFixed(1)} cm`;
+      return `${heightCm.toFixed(1)} cm`;
     }
 
     function isSmartEmptyHeight() {
@@ -626,8 +638,8 @@
         .slice(-SMART_EMPTY_WINDOW)
         .map(calibratedHeight)
         .filter((v) => v !== null && Number.isFinite(v));
-      if (recent.length < Math.min(12, SMART_EMPTY_WINDOW)) return false;
-      if (recent[recent.length - 1] * 100 >= 210) return true;
+      if (recent.length < Math.min(8, SMART_EMPTY_WINDOW)) return false;
+      if (isEmptyHeightMeters(recent[recent.length - 1])) return true;
       let cliffs = 0;
       for (let i = 1; i < recent.length; i += 1) {
         if (Math.abs(recent[i] - recent[i - 1]) >= SMART_EMPTY_CLIFF_M) cliffs += 1;
@@ -638,23 +650,30 @@
     }
 
     function updateStableDashboardHeight(heightMeters) {
-      if (heightMeters === null || !Number.isFinite(heightMeters)) {
-        els.dashboardHeight.textContent = "-";
-        return;
-      }
-      if (isSmartEmptyHeight()) {
+      const emptyNow = isEmptyHeightMeters(heightMeters) || isSmartEmptyHeight();
+      const nowMs = Date.now();
+      if (emptyNow) {
+        if (state.dashboardEmptySinceMs === null) state.dashboardEmptySinceMs = nowMs;
+        if (state.dashboardLastValidText && nowMs - state.dashboardEmptySinceMs < EMPTY_HOLD_MS) {
+          els.dashboardHeight.textContent = state.dashboardLastValidText;
+          return;
+        }
         state.dashboardHeightQueue = [];
         state.dashboardHeightSum = 0;
         els.dashboardHeight.textContent = "EMPTY";
         return;
       }
+
+      state.dashboardEmptySinceMs = null;
       state.dashboardHeightQueue.push(heightMeters);
       state.dashboardHeightSum += heightMeters;
       while (state.dashboardHeightQueue.length > DASHBOARD_HEIGHT_MA_SIZE) {
         state.dashboardHeightSum -= state.dashboardHeightQueue.shift();
       }
       const stableHeight = state.dashboardHeightSum / state.dashboardHeightQueue.length;
-      els.dashboardHeight.textContent = formatHeightCm(stableHeight);
+      const stableText = formatHeightCm(stableHeight);
+      state.dashboardLastValidText = stableText;
+      els.dashboardHeight.textContent = stableText;
     }
 
     function setMqttStatus(text) {
@@ -1030,6 +1049,8 @@
       state.badCount = 0;
       state.dashboardHeightQueue = [];
       state.dashboardHeightSum = 0;
+      state.dashboardEmptySinceMs = null;
+      state.dashboardLastValidText = null;
       updateMetrics();
       updateHistoryLog();
       drawPlot();
@@ -1047,7 +1068,7 @@
     function commitPeakHistoryCandidate() {
       if (!state.peakCandidate || state.peakCandidate.y === null) return;
       const heightCm = state.peakCandidate.y * 100;
-      if (heightCm >= 210) return;
+      if (heightCm >= MAX_VALID_HEIGHT_CM || heightCm <= MIN_VALID_HEIGHT_CM) return;
       if (heightCm <= historyHeightThCm()) return;
       state.peakHistorySeq += 1;
       const timeTag = formatTimeTag();
