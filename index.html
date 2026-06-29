@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V24 2026.06.26 14:47</title>
+  <title>A1528B eSRD Range Profile Web UART V28 2026.06.29 11:58</title>
   <style>
     :root {
       color-scheme: light;
@@ -286,7 +286,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V24 2026.06.26 14:47</h1>
+    <h1>A1528B eSRD Range Profile Web UART V28 2026.06.29 11:58</h1>
     <div class="status" id="status">Ready.</div>
   </header>
 
@@ -362,6 +362,26 @@
         <button id="clearData">Clear</button>
       </div>
 
+      <div class="group">
+        <label>
+          MQTT WebSocket URL
+          <input id="mqttUrl" type="text" value="ws://59.124.7.96:9001">
+        </label>
+        <label>
+          MQTT topic
+          <input id="mqttTopic" type="text" value="height">
+        </label>
+        <div class="row">
+          <button id="mqttConnect">MQTT Connect</button>
+          <button id="mqttDisconnect" disabled>MQTT Disconnect</button>
+        </div>
+        <div class="row">
+          <button id="mqttTestStart" disabled>Start mqtt_test</button>
+          <button id="mqttTestStop" disabled>Stop mqtt_test</button>
+        </div>
+        <div class="note" id="mqttStatus">MQTT idle. Browser MQTT requires broker WebSocket support.</div>
+      </div>
+
       <p class="note">
         This page reads UART through the browser Web Serial API. It supports Windows and Linux in Chrome or Edge over HTTPS or localhost. Browser security requires manual port selection; choose COM5 on Windows or ttyUSB/ttyACM on Linux when prompted.
       </p>
@@ -369,7 +389,7 @@
 
     <section class="plot-wrap">
       <div class="plot-area">
-        <textarea id="historyLog" class="history-log" readonly placeholder="Peak history: IDLE at H <= 50 cm, save peak when H >= height_TH"></textarea>
+        <textarea id="historyLog" class="history-log" readonly placeholder="Peak history: (index, height_cm, time_tag)"></textarea>
         <canvas id="plot" width="1200" height="650"></canvas>
       </div>
       <div class="metrics">
@@ -392,6 +412,7 @@
     </section>
   </main>
 
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
     const els = {
       comPort: document.getElementById("comPort"),
@@ -416,6 +437,13 @@
       downloadCsv: document.getElementById("downloadCsv"),
       downloadLog: document.getElementById("downloadLog"),
       clearData: document.getElementById("clearData"),
+      mqttUrl: document.getElementById("mqttUrl"),
+      mqttTopic: document.getElementById("mqttTopic"),
+      mqttConnect: document.getElementById("mqttConnect"),
+      mqttDisconnect: document.getElementById("mqttDisconnect"),
+      mqttTestStart: document.getElementById("mqttTestStart"),
+      mqttTestStop: document.getElementById("mqttTestStop"),
+      mqttStatus: document.getElementById("mqttStatus"),
       status: document.getElementById("status"),
       canvas: document.getElementById("plot"),
       historyLog: document.getElementById("historyLog"),
@@ -433,6 +461,7 @@
 
     const CALI_STORAGE_KEY = "a1528b_esrd_cali_cm";
     const FW_ROI_STORAGE_KEY = "a1528b_esrd_fw_roi";
+    const HEIGHT_TH_STORAGE_KEY = "a1528b_esrd_height_th_cm";
     const DEFAULT_HISTORY_HEIGHT_TH_CM = 120;
     const HISTORY_IDLE_HEIGHT_CM = 50;
 
@@ -460,12 +489,20 @@
       peakHistorySeq: 0,
       peakHistoryState: "IDLE",
       peakCandidate: null,
+      mqttClient: null,
+      mqttConnected: false,
+      mqttTestTimer: null,
+      mqttTestSeq: 0,
       badCount: 0,
       portMap: new Map()
     };
 
     function setStatus(text) {
       els.status.textContent = text;
+    }
+
+    function setMqttStatus(text) {
+      els.mqttStatus.textContent = text;
     }
 
     function syncLegendColors() {
@@ -491,6 +528,26 @@
 
     function historyHeightThCm() {
       return Number(els.heightThCm.value) || DEFAULT_HISTORY_HEIGHT_TH_CM;
+    }
+
+    function loadSavedHeightTh() {
+      try {
+        const saved = window.localStorage.getItem(HEIGHT_TH_STORAGE_KEY);
+        if (saved === null) return;
+        const value = Math.max(20, Math.min(240, Number.parseInt(saved, 10)));
+        if (Number.isFinite(value)) els.heightThCm.value = String(value);
+      } catch (_err) {
+        // Storage can be unavailable in restricted browser modes.
+      }
+      syncHeightThLabel();
+    }
+
+    function saveHeightTh() {
+      try {
+        window.localStorage.setItem(HEIGHT_TH_STORAGE_KEY, els.heightThCm.value);
+      } catch (_err) {
+        // Keep height_TH usable even when persistence is blocked.
+      }
     }
 
     function loadSavedFwRoi() {
@@ -535,6 +592,112 @@
       } catch (_err) {
         // Keep calibration usable even when persistence is blocked.
       }
+    }
+
+    function formatTimeTag(date = new Date()) {
+      const p = (n) => String(n).padStart(2, "0");
+      return `${date.getFullYear()}.${p(date.getMonth() + 1)}.${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
+    }
+
+    function setMqttConnected(isConnected) {
+      state.mqttConnected = isConnected;
+      els.mqttConnect.disabled = isConnected;
+      els.mqttDisconnect.disabled = !isConnected;
+      els.mqttUrl.disabled = isConnected;
+      els.mqttTopic.disabled = isConnected;
+      els.mqttTestStart.disabled = !isConnected || Boolean(state.mqttTestTimer);
+      els.mqttTestStop.disabled = !state.mqttTestTimer;
+    }
+
+    function normalizeMqttUrl(rawUrl) {
+      const trimmed = rawUrl.trim();
+      const fixed = trimmed.replace(/^(wss?:\/\/\d+\.\d+\.\d+\.\d+)\.(\d+)(\/.*)?$/i, "$1:$2$3");
+      return fixed;
+    }
+
+    function connectMqtt() {
+      if (!window.mqtt) {
+        setMqttStatus("MQTT library unavailable. Check internet access for mqtt.js.");
+        return;
+      }
+      const url = normalizeMqttUrl(els.mqttUrl.value);
+      if (url !== els.mqttUrl.value.trim()) {
+        els.mqttUrl.value = url;
+      }
+      if (!url) {
+        setMqttStatus("MQTT URL is empty.");
+        return;
+      }
+      try {
+        if (state.mqttClient) state.mqttClient.end(true);
+        state.mqttClient = window.mqtt.connect(url, {
+          reconnectPeriod: 2000,
+          connectTimeout: 5000
+        });
+        setMqttStatus(`MQTT connecting ${url}`);
+
+        state.mqttClient.on("connect", () => {
+          setMqttConnected(true);
+          setMqttStatus(`MQTT connected ${url}, topic ${els.mqttTopic.value.trim() || "height"}`);
+        });
+        state.mqttClient.on("reconnect", () => setMqttStatus(`MQTT reconnecting ${url}`));
+        state.mqttClient.on("close", () => {
+          setMqttConnected(false);
+          setMqttStatus("MQTT disconnected.");
+        });
+        state.mqttClient.on("error", (err) => setMqttStatus(`MQTT error: ${err.message}`));
+      } catch (err) {
+        setMqttConnected(false);
+        setMqttStatus(`MQTT connect failed: ${err.message}`);
+      }
+    }
+
+    function disconnectMqtt() {
+      stopMqttTest();
+      if (state.mqttClient) {
+        state.mqttClient.end(true);
+        state.mqttClient = null;
+      }
+      setMqttConnected(false);
+      setMqttStatus("MQTT disconnected.");
+    }
+
+    function publishMqttMessage(topic, message) {
+      if (!state.mqttClient || !state.mqttConnected) {
+        setMqttStatus(`MQTT not connected. Pending ${topic}: ${message}`);
+        return false;
+      }
+      state.mqttClient.publish(topic, message, { qos: 0, retain: false }, (err) => {
+        if (err) setMqttStatus(`MQTT publish failed: ${err.message}`);
+        else setMqttStatus(`MQTT published ${topic}: ${message}`);
+      });
+      return true;
+    }
+
+    function publishMqttHistory(recordText) {
+      const topic = els.mqttTopic.value.trim() || "height";
+      publishMqttMessage(topic, recordText);
+    }
+
+    function sendMqttTestMessage() {
+      state.mqttTestSeq += 1;
+      publishMqttMessage("mqtt_test", `(${state.mqttTestSeq}, ${formatTimeTag()})`);
+    }
+
+    function startMqttTest() {
+      if (state.mqttTestTimer) return;
+      state.mqttTestSeq = 0;
+      sendMqttTestMessage();
+      state.mqttTestTimer = window.setInterval(sendMqttTestMessage, 1000);
+      setMqttConnected(state.mqttConnected);
+    }
+
+    function stopMqttTest() {
+      if (state.mqttTestTimer) {
+        window.clearInterval(state.mqttTestTimer);
+        state.mqttTestTimer = null;
+      }
+      setMqttConnected(state.mqttConnected);
     }
 
     function calibratedHeight(rec) {
@@ -716,7 +879,7 @@
     }
 
     function updateHistoryLog() {
-      els.historyLog.value = state.peakHistory.map((item) => `(${item.index}, ${item.heightCm} cm)`).join("\n");
+      els.historyLog.value = state.peakHistory.map((item) => item.text).join("\n");
       els.historyLog.scrollTop = els.historyLog.scrollHeight;
     }
 
@@ -725,9 +888,12 @@
       const heightCm = Math.round(state.peakCandidate.y * 100);
       if (heightCm <= historyHeightThCm()) return;
       state.peakHistorySeq += 1;
-      state.peakHistory.push({ index: state.peakHistorySeq, heightCm, fn: state.peakCandidate.fn });
+      const timeTag = formatTimeTag();
+      const text = `(${state.peakHistorySeq}, ${heightCm} cm, ${timeTag})`;
+      state.peakHistory.push({ index: state.peakHistorySeq, heightCm, timeTag, fn: state.peakCandidate.fn, text });
       if (state.peakHistory.length > 500) state.peakHistory.shift();
       updateHistoryLog();
+      publishMqttHistory(text);
     }
 
     function recordPeakHistory(heightDeglitch) {
@@ -1009,7 +1175,7 @@
       const x = sx(peak.fn);
       const y = sy(peak.y);
       const heightCm = Math.round(peak.y * 100);
-      const label = `${heightCm} cm`;
+      const label = heightCm >= 210 ? "Scanning" : `${heightCm} cm`;
 
       ctx.fillStyle = color;
       ctx.strokeStyle = "#ffffff";
@@ -1086,6 +1252,10 @@
     els.clearData.addEventListener("click", clearData);
     els.downloadCsv.addEventListener("click", downloadCsv);
     els.downloadLog.addEventListener("click", downloadLog);
+    els.mqttConnect.addEventListener("click", connectMqtt);
+    els.mqttDisconnect.addEventListener("click", disconnectMqtt);
+    els.mqttTestStart.addEventListener("click", startMqttTest);
+    els.mqttTestStop.addEventListener("click", stopMqttTest);
     els.fwRoi.addEventListener("input", () => {
       syncFwRoiLabel();
       drawPlot();
@@ -1097,6 +1267,11 @@
     });
     els.heightThCm.addEventListener("input", () => {
       syncHeightThLabel();
+    });
+    els.heightThCm.addEventListener("change", () => {
+      syncHeightThLabel();
+      saveHeightTh();
+      setStatus(`Saved height_TH ${els.heightThCm.value} cm for next open.`);
     });
     els.caliCm.addEventListener("input", () => {
       syncCaliLabel();
@@ -1113,14 +1288,15 @@
     window.addEventListener("resize", resizeCanvas);
     window.addEventListener("beforeunload", () => {
       if (state.port) disconnectSerial();
+      if (state.mqttClient) disconnectMqtt();
     });
 
     if (!("serial" in navigator)) {
       setStatus("Web Serial needs Chrome or Edge over HTTPS.");
     }
     loadSavedFwRoi();
+    loadSavedHeightTh();
     loadSavedCali();
-    syncHeightThLabel();
     syncLegendColors();
     refreshPorts();
     updateMetrics();
