@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A1528B eSRD Range Profile Web UART V33 2026.06.29 12:56 completed</title>
+  <title>A1528B eSRD Range Profile Web UART V34 2026.06.29 13:07 completed</title>
   <style>
     :root {
       color-scheme: light;
@@ -371,7 +371,7 @@
 </head>
 <body>
   <header>
-    <h1>A1528B eSRD Range Profile Web UART V33 2026.06.29 12:56 completed</h1>
+    <h1>A1528B eSRD Range Profile Web UART V34 2026.06.29 13:07 completed</h1>
     <div class="mode-switch" aria-label="Display mode">
       <button id="modeRd" type="button" data-mode="rd" class="active">RD</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
@@ -562,6 +562,10 @@
     const DEFAULT_HISTORY_HEIGHT_TH_CM = 120;
     const HISTORY_IDLE_HEIGHT_CM = 50;
     const DASHBOARD_HEIGHT_MA_SIZE = 20;
+    const SMART_EMPTY_WINDOW = 60;
+    const SMART_EMPTY_CLIFF_M = 0.25;
+    const SMART_EMPTY_MIN_CLIFFS = 4;
+    const SMART_EMPTY_RANGE_M = 0.65;
 
     const colors = {
       r0: "#ff0000",
@@ -617,9 +621,31 @@
       return heightCm >= 210 ? "EMPTY" : `${heightCm.toFixed(1)} cm`;
     }
 
+    function isSmartEmptyHeight() {
+      const recent = state.records
+        .slice(-SMART_EMPTY_WINDOW)
+        .map(calibratedHeight)
+        .filter((v) => v !== null && Number.isFinite(v));
+      if (recent.length < Math.min(12, SMART_EMPTY_WINDOW)) return false;
+      if (recent[recent.length - 1] * 100 >= 210) return true;
+      let cliffs = 0;
+      for (let i = 1; i < recent.length; i += 1) {
+        if (Math.abs(recent[i] - recent[i - 1]) >= SMART_EMPTY_CLIFF_M) cliffs += 1;
+      }
+      const minH = Math.min(...recent);
+      const maxH = Math.max(...recent);
+      return cliffs >= SMART_EMPTY_MIN_CLIFFS && (maxH - minH) >= SMART_EMPTY_RANGE_M;
+    }
+
     function updateStableDashboardHeight(heightMeters) {
       if (heightMeters === null || !Number.isFinite(heightMeters)) {
         els.dashboardHeight.textContent = "-";
+        return;
+      }
+      if (isSmartEmptyHeight()) {
+        state.dashboardHeightQueue = [];
+        state.dashboardHeightSum = 0;
+        els.dashboardHeight.textContent = "EMPTY";
         return;
       }
       state.dashboardHeightQueue.push(heightMeters);
@@ -1033,6 +1059,7 @@
     }
 
     function recordPeakHistory(heightDeglitch) {
+      if (isSmartEmptyHeight()) return;
       const valid = heightDeglitch.filter((p) => p.y !== null);
       if (!valid.length) return;
       const latest = valid[valid.length - 1];
@@ -1075,8 +1102,8 @@
       return deglitchSeries(points, "r0", medianWin, spikeTh, jumpTh);
     }
 
-    function deglitchHeight(points, medianWin = 5, spikeTh = 0.18, jumpTh = 0.3) {
-      return deglitchSeries(points, "height", medianWin, spikeTh, jumpTh);
+    function deglitchHeight(points, medianWin = 7, spikeTh = 0.16, jumpTh = 0.24) {
+      return smoothSeries(deglitchSeries(points, "height", medianWin, spikeTh, jumpTh), 7);
     }
 
     function deglitchSeries(points, key, medianWin, spikeTh, jumpTh) {
@@ -1108,6 +1135,31 @@
         prevValid = y;
       }
 
+      return out;
+    }
+
+    function smoothSeries(points, windowSize = 7) {
+      const out = [];
+      const half = Math.floor(windowSize / 2);
+      for (let i = 0; i < points.length; i += 1) {
+        const p = points[i];
+        if (p.y === null) {
+          out.push({ ...p });
+          continue;
+        }
+        let sum = 0;
+        let weightSum = 0;
+        let changed = Boolean(p.changed);
+        for (let j = Math.max(0, i - half); j <= Math.min(points.length - 1, i + half); j += 1) {
+          const q = points[j];
+          if (q.y === null) continue;
+          const weight = half + 1 - Math.abs(i - j);
+          sum += q.y * weight;
+          weightSum += weight;
+          changed = changed || Boolean(q.changed);
+        }
+        out.push({ ...p, y: weightSum ? sum / weightSum : p.y, changed });
+      }
       return out;
     }
 
