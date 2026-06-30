@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Height Measurement Monitor by Joybien Technologies V53 2026.06.30 15:23</title>
+  <title>Height Measurement Monitor by Joybien Technologies V54 2026.06.30 15:40</title>
   <style>
     :root {
       color-scheme: light;
@@ -434,7 +434,7 @@
 </head>
 <body>
   <header>
-    <h1>Height Measurement Monitor by Joybien Technologies V53 2026.06.30 15:23</h1>
+    <h1>Height Measurement Monitor by Joybien Technologies V54 2026.06.30 15:40</h1>
     <div class="mode-switch" aria-label="Display mode">
       <button id="modeRd" type="button" data-mode="rd" class="active">RD</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
@@ -640,6 +640,7 @@
     const PEAK_FALL_DELTA_M = 0.03;
     const NATIVE_MQTT_HELPER_URL = "http://127.0.0.1:8765/publish";
     const NATIVE_MQTT_PUBLISH_PERIOD_MS = 200;
+    const AUTO_NATIVE_MQTT_DELAY_MS = 5000;
 
     const colors = {
       r0: "#ff0000",
@@ -671,6 +672,8 @@
       mqttTestSeq: 0,
       nativeMqttEnabled: false,
       nativeMqttLastPublishMs: 0,
+      autoNativeMqttTimer: null,
+      autoNativeMqttStarted: false,
       latestMqttPayloadText: "",
       mqttPayloadVisible: false,
       badCount: 0,
@@ -976,8 +979,25 @@
       setMqttStatus(`Native MQTT send enabled via ${NATIVE_MQTT_HELPER_URL}`);
     }
 
+    function scheduleAutoNativeMqttStart() {
+      if (state.nativeMqttEnabled || state.autoNativeMqttStarted || state.autoNativeMqttTimer) return;
+      state.autoNativeMqttTimer = window.setTimeout(() => {
+        state.autoNativeMqttTimer = null;
+        if (!state.port || !state.reading || state.nativeMqttEnabled) return;
+        state.autoNativeMqttStarted = true;
+        startNativeMqttPublish();
+        setMqttStatus(`UART confirmed. Auto-enabled Native MQTT after ${AUTO_NATIVE_MQTT_DELAY_MS / 1000}s.`);
+      }, AUTO_NATIVE_MQTT_DELAY_MS);
+      setMqttStatus(`UART confirmed. Native MQTT will auto-enable in ${AUTO_NATIVE_MQTT_DELAY_MS / 1000}s.`);
+    }
+
     function stopNativeMqttPublish() {
       state.nativeMqttEnabled = false;
+      state.autoNativeMqttStarted = true;
+      if (state.autoNativeMqttTimer) {
+        window.clearTimeout(state.autoNativeMqttTimer);
+        state.autoNativeMqttTimer = null;
+      }
       setMqttConnected(false);
       setMqttStatus("Native MQTT send stopped.");
     }
@@ -1175,6 +1195,7 @@
 
       state.records.push(rec);
       confirmDefaultUartPort();
+      scheduleAutoNativeMqttStart();
       if (state.records.length > 20000) state.records.shift();
       updateMetrics();
       publishNativeMqttRecord(rec);
@@ -1274,6 +1295,10 @@
 
     async function disconnectSerial(showStatus = true) {
       state.reading = false;
+      if (state.autoNativeMqttTimer) {
+        window.clearTimeout(state.autoNativeMqttTimer);
+        state.autoNativeMqttTimer = null;
+      }
       if (state.reader) {
         try {
           await state.reader.cancel();
