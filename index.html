@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Height Measurement Monitor by Joybien Technologies V52 2026.06.30 14:21</title>
+  <title>Height Measurement Monitor by Joybien Technologies V53 2026.06.30 15:23</title>
   <style>
     :root {
       color-scheme: light;
@@ -434,7 +434,7 @@
 </head>
 <body>
   <header>
-    <h1>Height Measurement Monitor by Joybien Technologies V52 2026.06.30 14:21</h1>
+    <h1>Height Measurement Monitor by Joybien Technologies V53 2026.06.30 15:23</h1>
     <div class="mode-switch" aria-label="Display mode">
       <button id="modeRd" type="button" data-mode="rd" class="active">RD</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
@@ -635,8 +635,8 @@
     const SMART_EMPTY_RANGE_M = 0.65;
     const EMPTY_HOLD_MS = 1500;
     const EMPTY_DISPLAY_TEXT = "Scanning...";
-    const MIN_VALID_HEIGHT_CM = 60;
-    const MAX_VALID_HEIGHT_CM = 210;
+    const MIN_VALID_HEIGHT_CM = 100;
+    const MAX_VALID_HEIGHT_CM = 200;
     const PEAK_FALL_DELTA_M = 0.03;
     const NATIVE_MQTT_HELPER_URL = "http://127.0.0.1:8765/publish";
     const NATIVE_MQTT_PUBLISH_PERIOD_MS = 200;
@@ -722,7 +722,7 @@
     function isEmptyHeightMeters(heightMeters) {
       if (heightMeters === null || !Number.isFinite(heightMeters)) return true;
       const heightCm = heightMeters * 100;
-      return heightCm >= MAX_VALID_HEIGHT_CM || heightCm <= MIN_VALID_HEIGHT_CM;
+      return heightCm > MAX_VALID_HEIGHT_CM || heightCm < MIN_VALID_HEIGHT_CM;
     }
 
     function formatHeightCm(heightMeters) {
@@ -757,11 +757,12 @@
     }
 
     function updateStableDashboardHeight(heightMeters) {
-      const emptyNow = isEmptyHeightMeters(heightMeters) || isSmartEmptyHeight();
+      const invalidNow = isEmptyHeightMeters(heightMeters);
+      const emptyNow = invalidNow || isSmartEmptyHeight();
       const nowMs = Date.now();
       if (emptyNow) {
         if (state.dashboardEmptySinceMs === null) state.dashboardEmptySinceMs = nowMs;
-        if (state.dashboardLastValidText && nowMs - state.dashboardEmptySinceMs < EMPTY_HOLD_MS) {
+        if (!invalidNow && state.dashboardLastValidText && nowMs - state.dashboardEmptySinceMs < EMPTY_HOLD_MS) {
           els.dashboardHeight.textContent = state.dashboardLastValidText;
           return;
         }
@@ -999,9 +1000,8 @@
 
     function nativeMqttPayload(rec) {
       const heightMeters = calibratedHeight(rec);
-      if (heightMeters === null || !Number.isFinite(heightMeters)) return null;
-      const heightCm = heightMeters * 100;
-      if (heightCm <= MIN_VALID_HEIGHT_CM || heightCm >= MAX_VALID_HEIGHT_CM) return null;
+      const validHeight = heightMeters !== null && Number.isFinite(heightMeters) && !isEmptyHeightMeters(heightMeters);
+      const heightCm = validHeight ? heightMeters * 100 : 0;
       return {
         fn: rec.fn,
         height_cm: Number(heightCm.toFixed(1)),
@@ -1317,7 +1317,7 @@
     function commitPeakHistoryCandidate() {
       if (!state.peakCandidate || state.peakCandidate.y === null) return;
       const heightCm = state.peakCandidate.y * 100;
-      if (heightCm >= MAX_VALID_HEIGHT_CM || heightCm <= MIN_VALID_HEIGHT_CM) return;
+      if (heightCm > MAX_VALID_HEIGHT_CM || heightCm < MIN_VALID_HEIGHT_CM) return;
       if (heightCm <= historyHeightThCm()) return;
       state.peakHistorySeq += 1;
       const timeTag = formatTimeTag();
