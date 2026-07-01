@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Height Measurement Monitor by Joybien Technologies V56 2026.07.01 12:18</title>
+  <title>Height Measurement Monitor by Joybien Technologies V57 2026.07.01 14:41</title>
   <style>
     :root {
       color-scheme: light;
@@ -310,6 +310,11 @@
       white-space: nowrap;
     }
 
+    .dashboard-height b.scanning {
+      font-size: clamp(42px, 7.5vw, 120px);
+      line-height: 1.08;
+    }
+
     .dashboard-payload-bar {
       align-self: end;
       display: grid;
@@ -444,7 +449,7 @@
 </head>
 <body>
   <header>
-    <h1>Height Measurement Monitor by Joybien Technologies V56 2026.07.01 12:18</h1>
+    <h1>Height Measurement Monitor by Joybien Technologies V57 2026.07.01 14:41</h1>
     <div class="mode-switch" aria-label="Display mode">
       <button id="modeRd" type="button" data-mode="rd" class="active">PROFESSIONAL</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
@@ -745,6 +750,11 @@
       return `${heightCm.toFixed(1)} cm`;
     }
 
+    function setDashboardHeightText(text) {
+      els.dashboardHeight.textContent = text;
+      els.dashboardHeight.classList.toggle("scanning", text === EMPTY_DISPLAY_TEXT);
+    }
+
     function isSmartEmptyHeight() {
       const recent = state.records
         .slice(-SMART_EMPTY_WINDOW)
@@ -776,11 +786,11 @@
       if (emptyNow) {
         if (state.dashboardEmptySinceMs === null) state.dashboardEmptySinceMs = nowMs;
         if (!invalidNow && state.dashboardLastValidText && nowMs - state.dashboardEmptySinceMs < EMPTY_HOLD_MS) {
-          els.dashboardHeight.textContent = state.dashboardLastValidText;
+          setDashboardHeightText(state.dashboardLastValidText);
           return;
         }
         resetDashboardMeasurement();
-        els.dashboardHeight.textContent = EMPTY_DISPLAY_TEXT;
+        setDashboardHeightText(EMPTY_DISPLAY_TEXT);
         return;
       }
 
@@ -808,7 +818,7 @@
       const displayText = formatHeightCm(displayHeight);
       state.dashboardPrevStableHeight = stableHeight;
       state.dashboardLastValidText = displayText;
-      els.dashboardHeight.textContent = displayText;
+      setDashboardHeightText(displayText);
     }
 
     function setMqttStatus(text) {
@@ -1394,7 +1404,7 @@
       els.lastFn.textContent = last ? String(last.fn) : "-";
       els.lastR0.textContent = last && last.r0 !== null ? last.r0.toFixed(3) : "-";
       if (last) updateStableDashboardHeight(calibratedHeight(last));
-      else els.dashboardHeight.textContent = "-";
+      else setDashboardHeightText("-");
     }
 
     function median(values) {
