@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Height Measurement Monitor by Joybien Technologies V55 2026.07.01 11:52</title>
+  <title>Height Measurement Monitor by Joybien Technologies V56 2026.07.01 12:18</title>
   <style>
     :root {
       color-scheme: light;
@@ -277,24 +277,34 @@
     .dashboard-height {
       display: grid;
       justify-items: center;
-      gap: 24px;
-      padding: 40px 28px;
+      align-content: center;
+      gap: clamp(14px, 2vh, 28px);
+      width: min(66vw, 1120px);
+      height: min(66vh, 680px);
+      min-width: 320px;
+      min-height: 260px;
+      box-sizing: border-box;
+      padding: clamp(22px, 4vw, 52px);
       background: #000000;
       border: 2px solid #16a34a;
       border-radius: 6px;
       text-align: center;
+      overflow: hidden;
     }
 
     .dashboard-height span {
       color: #00ffff;
-      font-size: 68px;
+      max-width: 100%;
+      font-size: clamp(36px, 4.6vw, 72px);
       font-weight: 800;
       line-height: 1.12;
+      white-space: nowrap;
     }
 
     .dashboard-height b {
       color: #00ffff;
-      font-size: clamp(172px, 26vw, 380px);
+      max-width: 100%;
+      font-size: clamp(82px, 15vw, 240px);
       line-height: 0.95;
       letter-spacing: 0;
       white-space: nowrap;
@@ -434,9 +444,9 @@
 </head>
 <body>
   <header>
-    <h1>Height Measurement Monitor by Joybien Technologies V55 2026.07.01 11:52</h1>
+    <h1>Height Measurement Monitor by Joybien Technologies V56 2026.07.01 12:18</h1>
     <div class="mode-switch" aria-label="Display mode">
-      <button id="modeRd" type="button" data-mode="rd" class="active">RD</button>
+      <button id="modeRd" type="button" data-mode="rd" class="active">PROFESSIONAL</button>
       <button id="modeDashboard" type="button" data-mode="dashboard">DASHBOARD</button>
     </div>
     <div class="status" id="status">Ready.</div>
