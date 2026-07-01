@@ -153,7 +153,7 @@ If the CSV parser has a bug or the JSON schema changes, the raw log can be used 
 ## Suggested Implementation Structure
 
 ```text
-codex_on_gep_project_save_dataset_windowsBased/
+codex_on_HEIGHT_mqtt_project/
   AGENTS.md
   PROJECT_PLAN_GEP_UART_RECORDER.md
   gep_uart_recorder.py
